@@ -76,6 +76,53 @@ def check_all_teams(df: pd.DataFrame, column: str, source_column: str = "goal_ho
     return mismatches
 
 
+def get_team_away_matches(df: pd.DataFrame, team: str, season) -> pd.DataFrame:
+    """Return only the rows where `team` played as the AWAY team,
+    WITHIN one season, sorted chronologically (oldest first).
+
+    Mirrors get_team_home_matches, but filters on away_team instead of
+    home_team. Used to test what the "_A" column family actually tracks:
+    the away team's own away-match history, or something else.
+    """
+    rows = df[(df["away_team"] == team) & (df["season"] == season)]
+    rows = rows.sort_values(by='date', ascending=True)
+    rows = rows.reset_index(drop=True)
+    return rows
+
+
+def check_all_teams_away(df: pd.DataFrame, column: str, source_column: str = "goal_away_ft") -> list:
+    """Same logic as check_all_teams, but for the away side: checks whether
+    `column` (e.g. goals_scored_ft_avg_A) matches a manually-computed
+    rolling average of `source_column` over each team's own AWAY matches,
+    within season.
+    """
+    mismatches = []
+    checks_run = 0
+
+    team_season_pairs = df[['away_team', 'season']].drop_duplicates().values
+
+    for team, season in team_season_pairs:
+        team_matches = get_team_away_matches(df, team, season)
+
+        for row_index in range(1, len(team_matches)):
+            manual_value = manual_accumulated_average(team_matches, row_index, source_column)
+            stored_value = team_matches.loc[row_index, column]
+            checks_run += 1
+
+            if abs(manual_value - stored_value) >= 0.01:
+                mismatches.append({
+                    "team": team,
+                    "season": season,
+                    "row_index": row_index,
+                    "manual_value": manual_value,
+                    "stored_value": stored_value,
+                })
+
+    print(f"Ran {checks_run} checks across {len(team_season_pairs)} team-season pairs.")
+    print(f"Mismatches found: {len(mismatches)}")
+    return mismatches
+
+
 if __name__ == "__main__":
     TEAM = "Arsenal"
     COLUMN = "goals_scored_ft_avg_H"
